@@ -65,6 +65,7 @@
 .cp-queue{margin:0 0 16px}.queue-heading{padding:12px 12px 0}.request-actions{display:flex;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:5px}.request-actions .btn{min-height:33px;font-size:.78rem}.refusal-editor{grid-column:1/-1;padding:9px 10px;background:#fff6f7;border:1px solid #efd4da;border-radius:8px}.refusal-editor .field{margin-top:0}.refusal-editor p{margin-top:5px;color:#922f3d}.refusal-editor .actions{margin-top:6px}
 @media(max-width:510px){.cp-queue .request{grid-template-columns:1fr}.request-actions{justify-content:flex-start}}
 .date-groups{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;font-size:.82rem}.date-groups>div{padding:6px;border:1px solid var(--edge);border-radius:6px}.date-groups ul{margin:4px 0 0;padding-left:16px}.date-groups li+li{margin-top:3px}
+.review-dates{margin-top:10px}.review-dates h3{margin-bottom:4px}.review-dates ul{margin:0;padding:0;list-style:none}.review-dates li{border-top:1px solid var(--edge);padding:5px 0}.review-dates li p{color:var(--muted)}.review-marker{position:absolute;right:5px;top:4px;display:grid;place-items:center;min-width:17px;height:17px;border-radius:50%;background:#663900;color:white;font-weight:800;font-size:.72rem;line-height:1}.day.needs-review::after{display:none}
 </style>
 </head>
 <body>
@@ -242,12 +243,19 @@ function targetError(date, days, exclude){
   if(reserved(date,exclude)) return "Une demande est déjà en cours pour cette date.";
   return "";
 }
-function reviewReason({removed,added}, days){
-  const affected = [...removed,...added];
-  if(removed.some(d=>d<demoDay || days.get(d)==="absence")) return "Modification d’une journée passée";
-  if(affected.some(d=>monthOf(d)===monthBeforeDefense)) return "Mois précédant la soutenance";
-  if(affected.some(d=>d<addDays(demoDay,2))) return "Demande à moins de 48 heures";
-  return "";
+function reviewDetails({removed,added}, days){
+  const details = new Map();
+  for(const date of [...removed,...added]){
+    const reasons = [];
+    if(removed.includes(date)&&(date<demoDay||days.get(date)==="absence")) reasons.push("Modification d’une journée passée");
+    if(monthOf(date)===monthBeforeDefense) reasons.push("Mois précédant la soutenance");
+    if(date>=demoDay&&date<addDays(demoDay,2)) reasons.push("Date à moins de 48 heures");
+    if(reasons.length)details.set(date,reasons);
+  }
+  return details;
+}
+function reviewReason(dates, days){
+  return [...new Set([...reviewDetails(dates,days).values()].flat())].join(" · ");
 }
 function issueFor({removed,added}, exclude){
   if(!removed.length || removed.length!==added.length) return "Sélectionnez autant de jours à retirer que de nouvelles dates.";
@@ -299,6 +307,7 @@ function drawCalendar(){
   const preview = view.role==="cp" && view.mode==="request" ? pending().find(r=>r.id===view.request) : null;
   const previewDays = preview?.type==="rhythm" ? published([preview,...appliedRequests()]) : null;
   const {removed,added} = preview ? datesOf(preview) : view;
+  const flagged = flagsForRequest(preview,days);
   for(const item of document.querySelectorAll(".move-legend"))item.hidden=!(view.mode==="move" || removed.length || added.length || previewDays);
   $("month-title").textContent = cap(monthName(view.month));
   const lesson = view.mode==="move"?"Cliquez sur les jours de formation à retirer et sur les nouvelles dates. Recliquez pour désélectionner.":
@@ -316,11 +325,12 @@ function drawCalendar(){
     const eligible = choose && !(days.has(date)?sourceError(date,days):targetError(date,days));
     const picked = isFrom || isTo || date===view.selected;
     const label = isFrom?"À déplacer":isTo?"Date proposée":name;
-    const title = cap(dateName(date,true))+" · "+label+(pendingDate?" · Demande en cours":"");
+    const reasons = flagged.get(date);
+    const title = cap(dateName(date,true))+" · "+label+(pendingDate?" · Demande en cours":"")+(reasons?" · À vérifier · "+reasons.join(" · "):"");
     const availability = eligible ? " eligible" : choose && !picked ? " unavailable" : "";
     const lock = ["fixed","coach","validated","entry","end"].includes(typeOn(date,days)) && !isFrom && !isTo;
-    const classes = "day "+style+(isFrom?" is-source":"")+(isTo?" is-destination":"")+(date===demoDay?" today":"")+(picked?" picked":"")+availability;
-    const marker = lock?'<span class="date-icon" aria-hidden="true">🔒</span>':"";
+    const classes = "day "+style+(isFrom?" is-source":"")+(isTo?" is-destination":"")+(date===demoDay?" today":"")+(picked?" picked":"")+(reasons?" needs-review":"")+availability;
+    const marker = reasons?'<span class="review-marker" aria-hidden="true">!</span>':lock?'<span class="date-icon" aria-hidden="true">🔒</span>':"";
     const tag = pendingDate&&!isFrom&&!isTo?'<span class="day-tag">En attente</span>':"";
     cells.push('<button type="button" class="'+classes+'" data-action="date" data-id="'+date+'" aria-label="'+title+'"'+(choose?' aria-pressed="'+Boolean(isFrom||isTo)+'"':"")+' title="'+title+'"><span class="num">'+Number(date.slice(-2))+'</span>'+marker+tag+'</button>');
   }
@@ -384,6 +394,23 @@ function rhythmPanel(){
     '<label class="field">Date de prise d’effet souhaitée<input type="date" name="effect" min="'+demoDay+'" max="'+addDays(defenseMonth+"-01",-1)+'" required></label><label class="field">Motif de la demande<textarea name="reason" required rows="2"></textarea></label>'+
     '<div class="info-box">Votre coordinateur pédagogique valide le changement. Les dates en vigueur s’appliquent jusque-là.</div><div class="actions"><button class="btn primary" type="submit">Envoyer pour validation</button><button class="btn plain" type="button" data-action="cancel">Annuler</button></div></form>';
 }
+function flagsForRequest(request, days){
+  if(request?.type!=="move")return new Map();
+  const dates = datesOf(request);
+  const flags = reviewDetails(dates,days);
+  if(!flags.size&&request.review){
+    for(const date of [...dates.removed,...dates.added])flags.set(date,[request.review]);
+  }
+  return flags;
+}
+function requestReview(r){
+  const flags = [...flagsForRequest(r,published())].sort(([a],[b])=>a.localeCompare(b));
+  if(!flags.length)return '<p class="summary-row"><b>Pourquoi une validation ?</b>'+esc(r.review)+'</p>';
+  const {removed}=datesOf(r);
+  return '<section class="review-dates"><h3>Dates à vérifier</h3><ul>'+flags.map(([date,reasons])=>
+    '<li><button class="text-btn" data-action="focus-review-date" data-id="'+date+'">'+cap(dateName(date,true))+'</button><p>'+
+    (removed.includes(date)?"Retrait":"Ajout")+' · '+esc(reasons.join(" · "))+'</p></li>').join("")+'</ul></section>';
+}
 function requestPanel(r){
   return '<div class="side-title"><h2>Détail de la demande</h2>'+badge(r)+'</div><h3>'+requestTitle(r)+'</h3>'+
     (r.type==="rhythm"?'<div class="info-box">'+esc(describe(r))+'</div>':dateGroups(datesOf(r),r.status==="applied"?"Dates confirmées":"Dates demandées"))+
@@ -391,7 +418,7 @@ function requestPanel(r){
     (r.decision?'<p class="summary-row"><b>Décision</b>'+esc(r.decision)+'</p>':"")+
     (r.response?'<p class="summary-row"><b>Motif communiqué</b>'+esc(r.response)+'</p>':"")+
     (r.status==="pending"?'<div class="info-box warn">Les dates du calendrier en vigueur restent applicables.</div>':"")+
-    (r.status==="pending"&&view.role==="cp"?'<p class="summary-row"><b>Pourquoi une validation ?</b>'+esc(r.review)+'</p>':"")+
+    (r.status==="pending"&&view.role==="cp"?requestReview(r):"")+
     (r.status==="pending"&&view.role==="ma"?'<div class="actions"><button class="btn danger" data-action="withdraw">Retirer la demande</button></div>':"");
 }
 function drawSide(){
@@ -534,6 +561,14 @@ document.addEventListener("click", event=>{
     const heading = showPreview ? $("month-title") : $("side").querySelector("h2");
     heading.setAttribute("tabindex","-1");
     heading.focus();
+  }
+  else if(action==="focus-review-date"&&view.role==="cp"&&view.mode==="request"){
+    view.selected=id;
+    view.month=monthOf(id);
+    drawCalendar();
+    const dateButton=$("days").querySelector('[data-id="'+id+'"]');
+    dateButton?.focus();
+    dateButton?.scrollIntoView({block:"nearest"});
   }
   else if(action==="withdraw") completeRequest("withdrawn");
   else if((action==="approve"||action==="refuse")&&view.role==="cp"){
