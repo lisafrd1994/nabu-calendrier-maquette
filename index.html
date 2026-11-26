@@ -16,17 +16,72 @@
 @media(max-width:1130px){.shell{grid-template-columns:156px minmax(0,1fr)}.content,.top{padding-left:17px;padding-right:17px}.workspace{grid-template-columns:minmax(0,1fr) 270px}.nav{padding-left:8px;padding-right:8px}.hero{align-items:flex-start;flex-direction:column}}
 @media(max-width:820px){.shell{display:block}.nav{height:auto;position:static;flex-direction:row;align-items:center;padding:9px 14px;gap:10px}.logo{margin:0;font-size:1.6rem}.nav-title,.nav-footer,.nav-item:not(.active){display:none}.nav-item{padding:5px 9px;margin:0}.workspace{grid-template-columns:minmax(0,1fr)}.side{position:static;grid-row:1}.side:not(.is-flow){grid-row:2}.days>*{min-height:54px}.hero{margin-bottom:12px}.top{min-height:51px}.content{padding-top:14px}}
 @media(max-width:510px){.content,.top{padding-left:9px;padding-right:9px}.metric{padding:7px 4px;gap:4px}.metric .glyph{display:none}.metric-label{font-size:.68rem}.metric-value{font-size:.82rem}.view-picker{font-size:.72rem;gap:3px}.view-picker select{font-size:.7rem;max-width:143px}.crumb{font-size:.72rem}.event{font-size:.56rem;padding-left:2px}.day{padding-left:2px;padding-right:2px}.booking-note{font-size:.53rem}.cal-head h2{font-size:1rem}.btn{min-height:37px}.cal-controls .icon{width:27px}.legend{font-size:.65rem}}
+
+/* Navigation Nabu */
+:root{--nav:#202529;--company:#2b70c1;--learn:#ffd351;--fixed:#f4a89a;--quiet:#d8dee5}
+.shell{grid-template-columns:248px minmax(0,1fr)}
+.nav{height:100dvh;min-height:430px;padding:0 13px 16px;border-right:1px solid #171b1e;color:#fff;z-index:2}
+.brand-box{min-height:94px;display:flex;align-items:center;justify-content:center;gap:7px;margin:0 -13px 16px;background:#22272b;box-shadow:0 4px 14px #14171a50}
+.brand-mark{position:relative;isolation:isolate;font-size:1.72rem;font-weight:850;letter-spacing:-.07em;line-height:1.1;padding:9px 5px}
+.brand-mark::before{content:"";position:absolute;inset:0 10px 0 -6px;z-index:-1;border:2px solid #f1416a;transform:rotate(12deg)}
+.brand-caption{font-size:.61rem;font-weight:750;line-height:1.2;text-transform:uppercase}
+.nav-section{display:flex;align-items:center;justify-content:space-between;margin:0 11px 11px;font-size:1.8rem;font-weight:750;letter-spacing:-.045em}
+.nav-toggle{background:#202529;color:#fff;border:1px solid #a3aab2;border-radius:6px;width:30px;height:30px;font-size:1rem;line-height:1}
+.nav-title{padding:0;margin-bottom:4px;color:#aab2bb;letter-spacing:.03em}
+.nav-item{margin:0;min-height:34px;border-radius:3px;color:#fff;padding:4px 10px;font-size:.94rem}
+.nav-item.active{background:#bd2d55;box-shadow:none}
+.nav-icon{color:#adb6c2}
+.nav-divider{border-top:1px solid #4d555d;margin-top:14px}
+.nav-footer{display:grid;gap:7px;padding:10px 8px 0;border-top:0;font-size:.84rem;overflow:hidden}
+.nav-footer span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav-footer b{display:inline-block;width:22px;color:#adb6c2}
+.shell.nav-compact{grid-template-columns:70px minmax(0,1fr)}
+.nav-compact .brand-caption,.nav-compact .nav-copy,.nav-compact .nav-title,.nav-compact .nav-footer{display:none}
+.nav-compact .nav-section,.nav-compact .nav-item{justify-content:center;margin-left:0;margin-right:0}
+.nav-compact .brand-mark{font-size:1.12rem}
+/* Day colors and move preview */
+.day{--day-color:#fff;--day-text:var(--ink);background:var(--day-color);color:var(--day-text);gap:2px}
+.day.company{--day-color:var(--company);--day-text:#fff}
+.day.training{--day-color:var(--learn);--day-text:#302305}
+.day.fixed{--day-color:var(--fixed);--day-text:#452019}
+.day.quiet{--day-color:var(--quiet);--day-text:#344151}
+.day.end{--day-color:#28755c;--day-text:#fff}
+.day.today .num{background:#182b49;color:#fff}
+.day.eligible{background:var(--day-color);outline:2px solid #fff;outline-offset:-4px}
+.day.eligible::after{background:white}
+.day.unavailable:not(.picked){filter:saturate(.52)}
+.day.picked{background:var(--day-color);box-shadow:inset 0 0 0 2px #263653}
+.day.is-source,.swatch.source{--day-text:#701b26;background:repeating-linear-gradient(-45deg,#fff0f1 0 6px,#eb6b77 6px 9px)}
+.day.is-destination,.swatch.destination{--day-text:#fff;background:#14724c}
+.day.is-source,.day.is-destination{box-shadow:inset 0 0 0 3px currentColor}
+.day .date-icon{position:absolute;top:5px;right:6px;font-size:.78rem}
+.day .day-tag{background:#fff;color:#263653;border-radius:4px;padding:1px 4px;font-size:.67rem;font-weight:750;line-height:1.25}
+.legend{column-gap:11px;row-gap:7px}
+.legend [hidden]{display:none}
+.swatch{width:13px;height:13px}
+@media(max-width:1130px){.shell{grid-template-columns:196px minmax(0,1fr)}}
+@media(max-width:820px){.shell,.shell.nav-compact{display:block}.nav{height:auto;min-height:0;padding:6px 10px;gap:10px}.brand-box{min-height:36px;margin:0;box-shadow:none;padding:0 4px}.brand-mark{font-size:1.18rem}.brand-caption,.nav-title,.nav-divider,.nav-footer{display:none}.nav-section{font-size:1.06rem;gap:5px;margin:0}.nav-item.active{padding:4px 6px}}
+@media(max-width:510px){.day .day-tag{font-size:.54rem;padding:1px 2px}.day .date-icon{right:3px;top:4px;font-size:.64rem}}
 </style>
 </head>
 <body>
 <div class="shell">
 <aside class="nav" aria-label="Navigation Nabu">
-<div class="logo">nabu<span>.</span></div>
-<p class="nav-title">Contrats</p>
-<div class="nav-item active"><span class="nav-icon" aria-hidden="true">▤</span><strong>Mes participants</strong></div>
-<div class="nav-item"><span class="nav-icon" aria-hidden="true">▣</span>Livret d’accueil</div>
-<div class="nav-item"><span class="nav-icon" aria-hidden="true">?</span>FAQ</div>
-<div class="nav-footer">iSCOD · Espace formation</div>
+<div class="brand-box" aria-label="iSCOD, l’alternance nouvelle génération"><div class="brand-mark">iSCOD</div><span class="brand-caption">L’alternance<br>nouvelle génération</span></div>
+<div class="nav-section"><span class="nav-copy">Contrats</span><button class="nav-toggle" data-action="toggle-nav" aria-label="Replier la navigation" aria-expanded="true" aria-controls="nav-links">‹</button></div>
+<div id="nav-links">
+<p class="nav-title">Gérer</p>
+<div class="nav-item active" aria-current="page"><span class="nav-icon" aria-hidden="true">▣</span><strong class="nav-copy">Mes participants</strong></div>
+<div class="nav-item"><span class="nav-icon" aria-hidden="true">▤</span><span class="nav-copy">Livret d’accueil</span></div>
+<div class="nav-item"><span class="nav-icon" aria-hidden="true">?</span><span class="nav-copy">FAQ</span></div>
+</div>
+<div class="nav-divider"></div>
+<div class="nav-footer">
+<span><b aria-hidden="true">ⓘ</b>Besoin d’aide ?</span>
+<span><b aria-hidden="true">♧</b>Notifications</span>
+<span><b aria-hidden="true">●</b><span id="role-label">Maître d’apprentissage</span></span>
+<span><b aria-hidden="true">⏻</b>Déconnexion</span>
+</div>
 </aside>
 <div>
 <header class="top">
@@ -52,7 +107,9 @@
 <span><i class="swatch" style="background:var(--company)"></i>Entreprise</span>
 <span><i class="swatch" style="background:var(--fixed)"></i>Formation verrouillée</span>
 <span><i class="swatch" style="background:var(--quiet)"></i>Repos / férié</span>
-<span><i class="swatch" style="background:var(--green)"></i>Rentrée / fin de formation</span>
+<span><i class="swatch" style="background:#28755c"></i>Rentrée / fin de formation</span>
+<span class="move-legend" hidden><i class="swatch source"></i>Jour à déplacer</span>
+<span class="move-legend" hidden><i class="swatch destination"></i>Nouvelle date proposée</span>
 </div>
 </section>
 <section class="card desk" id="requests" aria-label="Suivi des modifications">
@@ -221,6 +278,7 @@ function selectedDate(){
 }
 function drawCalendar(){
   const days = published();
+  for(const item of document.querySelectorAll(".move-legend"))item.hidden=!(view.source || view.pairs.length);
   $("month-title").textContent = cap(monthName(view.month));
   const lesson = view.mode==="source"?"Choisissez le jour de formation à déplacer":
     view.mode==="target"?"Choisissez la nouvelle date de formation":"";
@@ -240,12 +298,16 @@ function drawCalendar(){
     const title = cap(dateName(date,true))+" · "+label+(pendingDate?" · Demande en cours":"");
     const availability = eligible ? " eligible" : choose && !picked ? " unavailable" : "";
     const lock = ["fixed","coach","validated","entry","end"].includes(typeOn(date,days)) && !isFrom && !isTo;
-    cells.push('<button type="button" class="day'+(date===demoDay?" today":"")+(picked?" picked":"")+availability+'" data-action="date" data-id="'+date+'" aria-label="'+title+'" title="'+title+'"><span class="num">'+Number(date.slice(-2))+'</span><span class="event '+(isFrom?"source":isTo?"destination":style)+'">'+(lock?"▣ ":"")+label+'</span>'+(pendingDate?'<span class="booking-note">Demande en cours</span>':"")+'</button>');
+    const classes = "day "+style+(isFrom?" is-source":"")+(isTo?" is-destination":"")+(date===demoDay?" today":"")+(picked?" picked":"")+availability;
+    const marker = lock?'<span class="date-icon" aria-hidden="true">🔒</span>':"";
+    const tag = isFrom||isTo?'<span class="day-tag">'+label+'</span>':pendingDate?'<span class="day-tag">En attente</span>':"";
+    cells.push('<button type="button" class="'+classes+'" data-action="date" data-id="'+date+'" aria-label="'+title+'" title="'+title+'"><span class="num">'+Number(date.slice(-2))+'</span>'+marker+tag+'</button>');
   }
   while(cells.length%7) cells.push('<span class="no-day" aria-hidden="true"></span>');
   $("days").innerHTML = cells.join("");
 }
 function drawSummary(){
+  $("role-label").textContent=view.role==="cp"?"Coordinateur pédagogique":"Maître d’apprentissage";
   const rule = remaining();
   const values = [
     ["▦","Jour habituel",cap(weekdays[effectiveDay(demoDay)]),"glyph-amber"],
@@ -409,6 +471,13 @@ document.addEventListener("click", event=>{
   const button = event.target.closest("[data-action]");
   if(!button) return;
   const {action,id} = button.dataset;
+  if(action==="toggle-nav"){
+    const compact=button.closest(".shell").classList.toggle("nav-compact");
+    button.setAttribute("aria-expanded",String(!compact));
+    button.setAttribute("aria-label",compact?"Déplier la navigation":"Replier la navigation");
+    button.textContent=compact?"›":"‹";
+    return;
+  }
   if(action==="date"){handleDay(id); return;}
   if(["today","next","prev"].includes(action)){jumpMonth(action); drawCalendar(); return;}
   if(action==="start"){transition("source"); render();}
