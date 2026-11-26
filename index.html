@@ -289,6 +289,7 @@ function drawCalendar(){
   $("month-title").textContent = cap(monthName(view.month));
   const lesson = view.mode==="source"?"Choisissez le jour de formation à déplacer":
     view.mode==="target"?"Choisissez la nouvelle date de formation":
+    view.mode==="review"?"Cliquez sur un autre jour de formation ou confirmez les déplacements.":
     preview?"Aperçu de la demande · Les dates en vigueur restent applicables jusqu’à la validation.":"";
   $("instruction").innerHTML = lesson ? '<div class="cal-instruction">'+lesson+'</div>' : "";
   const first = view.month+"-01";
@@ -354,17 +355,17 @@ function summaryCard(){
 }
 function movementPanel(){
   const close = '<button class="btn plain" data-action="cancel">Annuler</button>';
-  if(view.mode==="source") return stepHeading(1,"Jour à déplacer")+'<p class="muted">Sélectionnez une journée de formation dans le calendrier.</p>'+ (view.pairs.length ? '<p>'+view.pairs.length+' déplacement(s) déjà préparé(s).</p>' : "")+'<div class="actions">'+(view.pairs.length?'<button class="btn" data-action="back-review">Revoir la demande</button>':"")+close+'</div>';
-  if(view.mode==="target") return stepHeading(2,"Nouvelle date")+'<div class="info-box">Jour initial · <b>'+cap(dateName(view.source))+'</b></div><p class="muted">Les dates possibles sont mises en évidence dans le calendrier.</p><div class="actions"><button class="btn" data-action="change-source">Changer le jour initial</button>'+close+'</div>';
+  if(view.mode==="source") return stepHeading(1,"Jour à déplacer")+'<p class="muted">Sélectionnez une journée de formation dans le calendrier.</p><div class="actions">'+close+'</div>';
+  if(view.mode==="target") return stepHeading(2,"Nouvelle date")+'<div class="info-box">Jour initial · <b>'+cap(dateName(view.source))+'</b></div><p class="muted">Les dates possibles sont mises en évidence dans le calendrier.</p><div class="actions"><button class="btn" data-action="change-source">'+(view.pairs.length?"Revenir au récapitulatif":"Changer le jour initial")+'</button>'+close+'</div>';
   const rule = reviewReason(view.pairs,published());
   const problem = issueFor(view.pairs);
   const required = view.pairs.some(p=>p.from<demoDay);
-  return stepHeading(3,"Vérifier le déplacement")+
+  return stepHeading(3,view.pairs.length>1?"Vérifier les déplacements":"Vérifier le déplacement")+
     view.pairs.map((p,i)=>pairMarkup(p.from,p.to)+'<button class="btn plain small" data-action="remove-pair" data-id="'+i+'">Retirer ce déplacement</button>').join("")+
     '<p class="muted">'+view.pairs.length+' déplacement(s) décompté(s) à l’application.</p>'+
     (problem?'<div class="info-box warn">'+esc(problem)+'</div>':rule?'<div class="info-box warn">Validation du coordinateur nécessaire. '+esc(rule)+'.</div>':'<div class="info-box success">Le déplacement peut être appliqué immédiatement.</div>')+
     '<label class="field">Motif '+(required?"obligatoire":"(facultatif)")+'<textarea id="move-reason" rows="2">'+esc(view.reason)+'</textarea></label>'+
-    '<div class="actions"><button class="btn primary" data-action="submit-move" '+(problem?"disabled":"")+'>'+(rule?"Envoyer pour validation":"Confirmer le déplacement")+'</button><button class="btn" data-action="another">Ajouter un déplacement</button>'+close+'</div>';
+    '<div class="actions"><button class="btn primary" data-action="submit-move" '+(problem?"disabled":"")+'>'+(rule?"Envoyer pour validation":view.pairs.length>1?"Confirmer les déplacements":"Confirmer le déplacement")+'</button>'+close+'</div>';
 }
 function rhythmPanel(){
   return '<h2>Changer le jour habituel</h2><p class="muted">Jour actuel · <b>'+weekdays[effectiveDay(demoDay)]+'</b></p>'+
@@ -415,7 +416,7 @@ function openRequest(request){
 }
 function handleDay(date){
   const days = published();
-  if(view.role==="cp" || ["rhythm","request","review"].includes(view.mode)){
+  if(view.role==="cp" || ["rhythm","request"].includes(view.mode)){
     view.selected = date;
     if(view.role==="cp" && view.mode!=="request") view.mode = "idle";
     render();
@@ -432,7 +433,7 @@ function handleDay(date){
     $("side").querySelector('[data-action="submit-move"]')?.focus({preventScroll:true});
     return;
   }
-  const problem = sourceError(date,days) || (view.pairs.some(p=>p.from===date)?"Cette journée figure déjà dans la demande.":"");
+  const problem = view.pairs.some(p=>p.from===date||p.to===date) ? "Cette date figure déjà dans la demande." : sourceError(date,days);
   if(problem){
     view.selected = date;
     if(view.mode==="idle"){drawCalendar();drawSide();}
@@ -450,7 +451,7 @@ function insertRequest(data){
   model.requests.unshift(request);
   save();
   openRequest(request);
-  feedback(request.status==="pending"?"Demande transmise au coordinateur pédagogique. Suivez le calendrier actuel.":"Déplacement confirmé. Le calendrier a été mis à jour.",request.status==="pending"?"":"success");
+  feedback(request.status==="pending"?"Demande transmise au coordinateur pédagogique. Suivez le calendrier actuel.":(request.pairs?.length>1?"Déplacements confirmés. Le calendrier a été mis à jour.":"Déplacement confirmé. Le calendrier a été mis à jour."),request.status==="pending"?"":"success");
 }
 function submitMove(){
   const problem = issueFor(view.pairs);
@@ -538,9 +539,9 @@ document.addEventListener("click", event=>{
     $("request-list").querySelector('[data-action="refuse"][data-id="'+view.request+'"]')?.focus();
   }
   else if(action==="submit-move") submitMove();
-  else if(action==="another" || action==="change-source" || action==="back-review" || action==="remove-pair"){
+  else if(action==="change-source" || action==="remove-pair"){
     if(action==="remove-pair") view.pairs.splice(Number(id),1);
-    view.mode = action==="back-review" || (action==="remove-pair"&&view.pairs.length) ? "review" : "source";
+    view.mode = view.pairs.length ? "review" : "source";
     view.source = null;
     view.message = "";
     render();
