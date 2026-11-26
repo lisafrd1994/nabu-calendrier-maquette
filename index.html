@@ -52,7 +52,7 @@
 .day.unavailable:not(.picked){filter:saturate(.52)}
 .day.picked{background:var(--day-color);box-shadow:inset 0 0 0 2px #263653}
 .day.is-source,.swatch.source{--day-text:#701b26;background:repeating-linear-gradient(-45deg,#fff0f1 0 6px,#eb6b77 6px 9px)}
-.day.is-destination,.swatch.destination{--day-text:#fff;background:#14724c}
+.day.is-destination,.swatch.destination{--day-text:#12432f;background:repeating-linear-gradient(-45deg,#e5f6ed 0 6px,#56b68d 6px 9px)}
 .day.is-source,.day.is-destination{box-shadow:inset 0 0 0 3px currentColor}
 .day .date-icon{position:absolute;top:5px;right:6px;font-size:.78rem}
 .day .day-tag{background:#fff;color:#263653;border-radius:4px;padding:1px 4px;font-size:.67rem;font-weight:750;line-height:1.25}
@@ -172,19 +172,19 @@ function save(){
 function inside(date){return date>=trainingStart && date<=trainingEnd;}
 function workday(date){return weekday(date)>=1 && weekday(date)<=5 && !holidays.has(date);}
 function appliedRequests(){return model.requests.filter(request => request.status==="applied");}
-function effectiveDay(date){
-  return appliedRequests().filter(r=>r.type==="rhythm"&&r.effect<=date).sort((a,b)=>b.effect.localeCompare(a.effect))[0]?.day ?? 4;
+function effectiveDay(date, requests=appliedRequests()){
+  return requests.filter(r=>r.type==="rhythm"&&r.effect<=date).sort((a,b)=>b.effect.localeCompare(a.effect))[0]?.day ?? 4;
 }
-function published(){
+function published(requests=appliedRequests()){
   const days = new Map([[trainingStart,"entry"],[trainingEnd,"end"]]);
   for(let date=addDays(trainingStart,6);date<trainingEnd;date=addDays(date,1)){
-    if(monthOf(date)!==defenseMonth && weekday(date)===effectiveDay(date) && workday(date)) days.set(date,"training");
+    if(monthOf(date)!==defenseMonth && weekday(date)===effectiveDay(date,requests) && workday(date)) days.set(date,"training");
   }
   for(const date of fixedDays) days.set(date,"fixed");
   days.set(coachDay,"coach");
   days.set(absenceDay,"absence");
   days.set(validatedDay,"validated");
-  for(const request of appliedRequests().slice().reverse()){
+  for(const request of requests.slice().reverse()){
     for(const pair of request.pairs ?? []){
       days.delete(pair.from);
       days.set(pair.to,"training");
@@ -282,18 +282,22 @@ function selectedDate(){
 }
 function drawCalendar(){
   const days = published();
-  for(const item of document.querySelectorAll(".move-legend"))item.hidden=!(view.source || view.pairs.length);
+  const preview = view.role==="cp" && view.mode==="request" ? pending().find(r=>r.id===view.request) : null;
+  const previewDays = preview?.type==="rhythm" ? published([preview,...appliedRequests()]) : null;
+  const pairs = preview?.pairs ?? view.pairs;
+  for(const item of document.querySelectorAll(".move-legend"))item.hidden=!(view.source || pairs.length || previewDays);
   $("month-title").textContent = cap(monthName(view.month));
   const lesson = view.mode==="source"?"Choisissez le jour de formation à déplacer":
-    view.mode==="target"?"Choisissez la nouvelle date de formation":"";
+    view.mode==="target"?"Choisissez la nouvelle date de formation":
+    preview?"Aperçu de la demande · Les dates en vigueur restent applicables jusqu’à la validation.":"";
   $("instruction").innerHTML = lesson ? '<div class="cal-instruction">'+lesson+'</div>' : "";
   const first = view.month+"-01";
   const offset = (weekday(first)+6)%7;
   const cells = Array.from({length:offset},()=>'<span class="no-day" aria-hidden="true"></span>');
   for(let date=first;monthOf(date)===view.month;date=addDays(date,1)){
     const [name, style] = eventNames[typeOn(date,days)];
-    const isFrom = date===view.source || view.pairs.some(p=>p.from===date);
-    const isTo = view.pairs.some(p=>p.to===date);
+    const isFrom = date===view.source || pairs.some(p=>p.from===date) || (previewDays && days.has(date) && !previewDays.has(date));
+    const isTo = pairs.some(p=>p.to===date) || (previewDays && !days.has(date) && previewDays.has(date));
     const pendingDate = reserved(date);
     const choose = view.mode==="target";
     const eligible = choose && !targetError(date,view.source,days,view.pairs);
@@ -304,7 +308,7 @@ function drawCalendar(){
     const lock = ["fixed","coach","validated","entry","end"].includes(typeOn(date,days)) && !isFrom && !isTo;
     const classes = "day "+style+(isFrom?" is-source":"")+(isTo?" is-destination":"")+(date===demoDay?" today":"")+(picked?" picked":"")+availability;
     const marker = lock?'<span class="date-icon" aria-hidden="true">🔒</span>':"";
-    const tag = isFrom||isTo?'<span class="day-tag">'+label+'</span>':pendingDate?'<span class="day-tag">En attente</span>':"";
+    const tag = pendingDate&&!isFrom&&!isTo?'<span class="day-tag">En attente</span>':"";
     cells.push('<button type="button" class="'+classes+'" data-action="date" data-id="'+date+'" aria-label="'+title+'" title="'+title+'"><span class="num">'+Number(date.slice(-2))+'</span>'+marker+tag+'</button>');
   }
   while(cells.length%7) cells.push('<span class="no-day" aria-hidden="true"></span>');
@@ -337,7 +341,7 @@ function drawRequests(){
   $("request-list").setAttribute("aria-labelledby", view.tab+"-tab");
   const rows = view.tab==="pending"?queue:model.requests.filter(r=>r.status!=="pending");
   const actions = r => cp && r.status==="pending" ?
-    '<div class="request-actions">'+badge(r)+'<button class="btn primary" data-action="approve" data-id="'+r.id+'">Valider</button><button class="btn danger" data-action="refuse" data-id="'+r.id+'">Refuser</button></div>' : '<div>'+badge(r)+'</div>';
+    '<div class="request-actions">'+badge(r)+'<button class="btn" data-action="preview-request" data-id="'+r.id+'">Voir sur le calendrier</button><button class="btn primary" data-action="approve" data-id="'+r.id+'">Valider</button><button class="btn danger" data-action="refuse" data-id="'+r.id+'">Refuser</button></div>' : '<div>'+badge(r)+'</div>';
   const refusalEditor = r => cp && r.status==="pending" && view.request===r.id && view.refusing ?
     '<form id="refuse-form" class="refusal-editor"><label class="field">Motif du refus (obligatoire)<textarea name="reason" required rows="2" aria-describedby="refusal-help refusal-error"></textarea></label><p class="muted small" id="refusal-help">Le motif sera communiqué au maître d’apprentissage et à l’apprenti.</p><p class="small" id="refusal-error" role="alert"></p><div class="actions"><button type="submit" class="btn danger">Confirmer le refus</button><button class="btn plain" type="button" data-action="cancel-refuse">Annuler</button></div></form>' : "";
   $("request-list").innerHTML = rows.length ? rows.map(r=>'<article class="request"><div><button type="button" class="text-btn" data-action="request" data-id="'+r.id+'">'+requestTitle(r)+'</button><p class="muted">'+esc(describe(r))+'</p></div>'+actions(r)+refusalEditor(r)+'</article>').join("") : '<p class="muted" style="padding:12px 0">Aucune demande '+(view.tab==="pending"?"en cours.":"dans l’historique.")+'</p>';
@@ -502,15 +506,19 @@ document.addEventListener("click", event=>{
   else if(action==="cancel"){transition("idle"); render();}
   else if(action==="tab" || action==="show-pending"){
     view.tab = action==="show-pending"?"pending":id;
-    if(view.mode==="request"){transition("idle");drawSide();renderNotice();}
+    if(view.mode==="request"){transition("idle");drawCalendar();drawSide();renderNotice();}
     drawRequests();
     if(action==="show-pending") $("requests").scrollIntoView({block:"nearest",behavior:"smooth"});
   }
-  else if(action==="request"){
+  else if(action==="request" || action==="preview-request"){
     const request = model.requests.find(r=>r.id===id);
+    if(!request)return;
+    const showPreview = view.role==="cp" && request.status==="pending";
+    if(showPreview)view.month=monthOf(request.effect ?? request.pairs[0].from);
     openRequest(request);
-    $("side").querySelector("h2").setAttribute("tabindex","-1");
-    $("side").querySelector("h2").focus();
+    const heading = showPreview ? $("month-title") : $("side").querySelector("h2");
+    heading.setAttribute("tabindex","-1");
+    heading.focus();
   }
   else if(action==="withdraw") completeRequest("withdrawn");
   else if((action==="approve"||action==="refuse")&&view.role==="cp"){
