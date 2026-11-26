@@ -64,6 +64,7 @@
 @media(max-width:510px){.day .day-tag{font-size:.54rem;padding:1px 2px}.day .date-icon{right:3px;top:4px;font-size:.64rem}}
 .cp-queue{margin:0 0 16px}.queue-heading{padding:12px 12px 0}.request-actions{display:flex;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:5px}.request-actions .btn{min-height:33px;font-size:.78rem}.refusal-editor{grid-column:1/-1;padding:9px 10px;background:#fff6f7;border:1px solid #efd4da;border-radius:8px}.refusal-editor .field{margin-top:0}.refusal-editor p{margin-top:5px;color:#922f3d}.refusal-editor .actions{margin-top:6px}
 @media(max-width:510px){.cp-queue .request{grid-template-columns:1fr}.request-actions{justify-content:flex-start}}
+.date-groups{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;font-size:.82rem}.date-groups>div{padding:6px;border:1px solid var(--edge);border-radius:6px}.date-groups ul{margin:4px 0 0;padding-left:16px}.date-groups li+li{margin-top:3px}
 </style>
 </head>
 <body>
@@ -164,7 +165,7 @@ function loadModel(){
   catch {return seed();}
 }
 let model = loadModel();
-const view = {role:"ma",month:monthOf(demoDay),tab:"pending",mode:"idle",source:null,pairs:[],reason:"",selected:null,request:null,message:"",tone:"",refusing:false};
+const view = {role:"ma",month:monthOf(demoDay),tab:"pending",mode:"idle",removed:[],added:[],reason:"",selected:null,request:null,message:"",tone:"",refusing:false};
 function save(){
   try {localStorage.setItem(storageKey,JSON.stringify(model));}
   catch { /* The preview can still be used in memory. */ }
@@ -174,6 +175,13 @@ function workday(date){return weekday(date)>=1 && weekday(date)<=5 && !holidays.
 function appliedRequests(){return model.requests.filter(request => request.status==="applied");}
 function effectiveDay(date, requests=appliedRequests()){
   return requests.filter(r=>r.type==="rhythm"&&r.effect<=date).sort((a,b)=>b.effect.localeCompare(a.effect))[0]?.day ?? 4;
+}
+function datesOf(request){
+  const pairs = request.pairs ?? [];
+  return {
+    removed: request.removed ?? pairs.map(pair=>pair.from),
+    added: request.added ?? pairs.map(pair=>pair.to)
+  };
 }
 function published(requests=appliedRequests()){
   const days = new Map([[trainingStart,"entry"],[trainingEnd,"end"]]);
@@ -185,10 +193,9 @@ function published(requests=appliedRequests()){
   days.set(absenceDay,"absence");
   days.set(validatedDay,"validated");
   for(const request of requests.slice().reverse()){
-    for(const pair of request.pairs ?? []){
-      days.delete(pair.from);
-      days.set(pair.to,"training");
-    }
+    const {removed,added}=datesOf(request);
+    for(const date of removed) days.delete(date);
+    for(const date of added) days.set(date,"training");
   }
   return days;
 }
@@ -196,10 +203,13 @@ function pending(exclude){
   return model.requests.filter(request=>request.status==="pending" && request.id!==exclude);
 }
 function remaining(){
-  return Math.max(0,quota-appliedRequests().reduce((sum,r)=>sum+(r.pairs?.length ?? 0),0));
+  return Math.max(0,quota-appliedRequests().reduce((sum,r)=>sum+datesOf(r).removed.length,0));
 }
 function reserved(date,exclude){
-  return pending(exclude).some(r=>(r.pairs ?? []).some(p=>p.from===date || p.to===date));
+  return pending(exclude).some(r=>{
+    const {removed,added}=datesOf(r);
+    return removed.includes(date)||added.includes(date);
+  });
 }
 const eventNames = {
   entry:["Rentrée","end"],end:["Fin de formation","end"],training:["Formation","training"],fixed:["Formation fixe","fixed"],
@@ -222,7 +232,7 @@ function sourceError(date, days, exclude){
   if(reserved(date,exclude)) return "Une demande de modification est déjà en cours pour cette date.";
   return "";
 }
-function targetError(date, from, days, pairs, exclude){
+function targetError(date, days, exclude){
   if(monthOf(date)===defenseMonth) return "Aucun jour de formation ne peut être ajouté pendant le mois de soutenance.";
   if(!inside(date)) return "Choisissez une date comprise dans la période de formation.";
   if(holidays.has(date)) return "Cette date est fériée. Choisissez un autre jour.";
@@ -230,39 +240,43 @@ function targetError(date, from, days, pairs, exclude){
   if(date<demoDay) return "Choisissez une nouvelle date à venir.";
   if(days.has(date)) return "Une journée de formation est déjà prévue à cette date.";
   if(reserved(date,exclude)) return "Une demande est déjà en cours pour cette date.";
-  if(pairs.some(p=>p.to===date)) return "Cette date figure déjà dans la demande.";
-  const fromMonth = monthOf(from);
-  if(fromMonth!==monthOf(date)){
-    const others = [...days.keys()].filter(d=>monthOf(d)===fromMonth && d!==from && !pairs.some(p=>p.from===d));
-    const arrivals = pairs.some(p=>monthOf(p.to)===fromMonth);
-    if(!others.length && !arrivals) return "Au moins un jour de formation doit rester en "+monthName(fromMonth)+".";
-  }
   return "";
 }
-function reviewReason(pairs, days){
-  if(pairs.some(p=>p.from<demoDay || days.get(p.from)==="absence")) return "Modification d’une journée passée";
-  if(pairs.some(p=>monthOf(p.from)===monthBeforeDefense || monthOf(p.to)===monthBeforeDefense)) return "Mois précédant la soutenance";
-  if(pairs.some(p=>p.from<addDays(demoDay,2) || p.to<addDays(demoDay,2))) return "Demande à moins de 48 heures";
+function reviewReason({removed,added}, days){
+  const affected = [...removed,...added];
+  if(removed.some(d=>d<demoDay || days.get(d)==="absence")) return "Modification d’une journée passée";
+  if(affected.some(d=>monthOf(d)===monthBeforeDefense)) return "Mois précédant la soutenance";
+  if(affected.some(d=>d<addDays(demoDay,2))) return "Demande à moins de 48 heures";
   return "";
 }
-function issueFor(pairs, exclude){
+function issueFor({removed,added}, exclude){
+  if(!removed.length || removed.length!==added.length) return "Sélectionnez autant de jours à retirer que de nouvelles dates.";
+  if(removed.length>remaining()) return "Il vous reste "+remaining()+" déplacement(s). Contactez votre coordinateur pédagogique pour demander des jours supplémentaires.";
   const days = published();
-  if(pairs.length>remaining()) return "Il vous reste "+remaining()+" déplacement(s). Contactez votre coordinateur pédagogique pour demander des jours supplémentaires.";
-  const previous = [];
-  for(const pair of pairs){
-    const problem = sourceError(pair.from,days,exclude) || targetError(pair.to,pair.from,days,previous,exclude);
+  for(const date of removed){
+    const problem = sourceError(date,days,exclude);
     if(problem) return problem;
-    previous.push(pair);
+  }
+  for(const date of added){
+    const problem = targetError(date,days,exclude);
+    if(problem) return problem;
+  }
+  const finalDates = new Set([...days.keys()].filter(d=>!removed.includes(d)).concat(added));
+  for(const month of new Set(removed.map(monthOf))){
+    if(![...finalDates].some(d=>monthOf(d)===month)) return "Au moins un jour de formation doit rester en "+monthName(month)+".";
   }
   return "";
 }
 function requestTitle(r){return r.type==="rhythm"?"Changement du jour habituel":"Déplacement de formation";}
-function pairMarkup(from,to, label="Date proposée"){
-  return '<div class="pair"><div><span>Date initiale</span><strong>'+cap(dateName(from))+'</strong></div><span aria-hidden="true">→</span><div><span>'+label+'</span><strong>'+cap(dateName(to))+'</strong></div></div>';
+function dateGroups({removed,added}, newLabel="Nouvelles dates"){
+  const group=(label, dates)=>'<div><strong>'+label+'</strong><ul>'+([...dates].sort().map(d=>'<li>'+cap(dateName(d,true))+'</li>').join("")||'<li>—</li>')+'</ul></div>';
+  return '<div class="date-groups">'+group("Dates à retirer",removed)+group(newLabel,added)+'</div>';
 }
 function describe(r){
   if(r.type==="rhythm") return cap(weekdays[r.oldDay])+" → "+weekdays[r.day]+" · à partir du "+dateName(r.effect);
-  return r.pairs.map(p=>cap(dateName(p.from))+" → "+dateName(p.to)).join(" ; ");
+  const {removed,added}=datesOf(r);
+  const format=dates=>[...dates].sort().map(d=>dateName(d,true)).join(", ");
+  return "Retrait · "+format(removed)+"  |  Ajout · "+format(added);
 }
 function badge(r){return '<span class="badge '+r.status+'">'+statusText[r.status]+'</span>';}
 function feedback(message="",tone="warn"){
@@ -274,22 +288,20 @@ function renderNotice(){
   $("notice").className = "info-box alert "+view.tone;
   $("notice").textContent = view.message;
 }
-function transition(mode, source=null){
-  Object.assign(view,{mode,source,pairs:[],selected:null,request:null,reason:"",refusing:false,message:""});
+function transition(mode){
+  Object.assign(view,{mode,removed:[],added:[],selected:null,request:null,reason:"",refusing:false,message:""});
 }
 function selectedDate(){
-  return view.source || view.selected;
+  return view.selected;
 }
 function drawCalendar(){
   const days = published();
   const preview = view.role==="cp" && view.mode==="request" ? pending().find(r=>r.id===view.request) : null;
   const previewDays = preview?.type==="rhythm" ? published([preview,...appliedRequests()]) : null;
-  const pairs = preview?.pairs ?? view.pairs;
-  for(const item of document.querySelectorAll(".move-legend"))item.hidden=!(view.source || pairs.length || previewDays);
+  const {removed,added} = preview ? datesOf(preview) : view;
+  for(const item of document.querySelectorAll(".move-legend"))item.hidden=!(view.mode==="move" || removed.length || added.length || previewDays);
   $("month-title").textContent = cap(monthName(view.month));
-  const lesson = view.mode==="source"?"Choisissez le jour de formation à déplacer":
-    view.mode==="target"?"Choisissez la nouvelle date de formation":
-    view.mode==="review"?"Cliquez sur un autre jour de formation ou confirmez les déplacements.":
+  const lesson = view.mode==="move"?"Cliquez sur les jours de formation à retirer et sur les nouvelles dates. Recliquez pour désélectionner.":
     preview?"Aperçu de la demande · Les dates en vigueur restent applicables jusqu’à la validation.":"";
   $("instruction").innerHTML = lesson ? '<div class="cal-instruction">'+lesson+'</div>' : "";
   const first = view.month+"-01";
@@ -297,11 +309,11 @@ function drawCalendar(){
   const cells = Array.from({length:offset},()=>'<span class="no-day" aria-hidden="true"></span>');
   for(let date=first;monthOf(date)===view.month;date=addDays(date,1)){
     const [name, style] = eventNames[typeOn(date,days)];
-    const isFrom = date===view.source || pairs.some(p=>p.from===date) || (previewDays && days.has(date) && !previewDays.has(date));
-    const isTo = pairs.some(p=>p.to===date) || (previewDays && !days.has(date) && previewDays.has(date));
+    const isFrom = removed.includes(date) || (previewDays && days.has(date) && !previewDays.has(date));
+    const isTo = added.includes(date) || (previewDays && !days.has(date) && previewDays.has(date));
     const pendingDate = reserved(date);
-    const choose = view.mode==="target";
-    const eligible = choose && !targetError(date,view.source,days,view.pairs);
+    const choose = view.mode==="move";
+    const eligible = choose && !(days.has(date)?sourceError(date,days):targetError(date,days));
     const picked = isFrom || isTo || date===view.selected;
     const label = isFrom?"À déplacer":isTo?"Date proposée":name;
     const title = cap(dateName(date,true))+" · "+label+(pendingDate?" · Demande en cours":"");
@@ -310,7 +322,7 @@ function drawCalendar(){
     const classes = "day "+style+(isFrom?" is-source":"")+(isTo?" is-destination":"")+(date===demoDay?" today":"")+(picked?" picked":"")+availability;
     const marker = lock?'<span class="date-icon" aria-hidden="true">🔒</span>':"";
     const tag = pendingDate&&!isFrom&&!isTo?'<span class="day-tag">En attente</span>':"";
-    cells.push('<button type="button" class="'+classes+'" data-action="date" data-id="'+date+'" aria-label="'+title+'" title="'+title+'"><span class="num">'+Number(date.slice(-2))+'</span>'+marker+tag+'</button>');
+    cells.push('<button type="button" class="'+classes+'" data-action="date" data-id="'+date+'" aria-label="'+title+'"'+(choose?' aria-pressed="'+Boolean(isFrom||isTo)+'"':"")+' title="'+title+'"><span class="num">'+Number(date.slice(-2))+'</span>'+marker+tag+'</button>');
   }
   while(cells.length%7) cells.push('<span class="no-day" aria-hidden="true"></span>');
   $("days").innerHTML = cells.join("");
@@ -325,7 +337,7 @@ function drawSummary(){
   ];
   $("metrics").innerHTML = values.map(([icon,label,value,style])=>'<div class="metric"><span class="glyph '+style+'" aria-hidden="true">'+icon+'</span><div><div class="metric-label">'+label+'</div><div class="metric-value">'+value+'</div></div></div>').join("");
   $("hero-actions").innerHTML = view.role==="ma" ?
-    '<button class="btn primary" data-action="start">Déplacer un jour de formation</button><button class="btn" data-action="rhythm">Changer le jour habituel</button>' :
+    '<button class="btn primary" data-action="start">Déplacer des jours de formation</button><button class="btn" data-action="rhythm">Changer le jour habituel</button>' :
     '<button class="btn primary" data-action="show-pending">Voir les demandes à traiter</button>';
 }
 function drawRequests(){
@@ -347,25 +359,24 @@ function drawRequests(){
     '<form id="refuse-form" class="refusal-editor"><label class="field">Motif du refus (obligatoire)<textarea name="reason" required rows="2" aria-describedby="refusal-help refusal-error"></textarea></label><p class="muted small" id="refusal-help">Le motif sera communiqué au maître d’apprentissage et à l’apprenti.</p><p class="small" id="refusal-error" role="alert"></p><div class="actions"><button type="submit" class="btn danger">Confirmer le refus</button><button class="btn plain" type="button" data-action="cancel-refuse">Annuler</button></div></form>' : "";
   $("request-list").innerHTML = rows.length ? rows.map(r=>'<article class="request"><div><button type="button" class="text-btn" data-action="request" data-id="'+r.id+'">'+requestTitle(r)+'</button><p class="muted">'+esc(describe(r))+'</p></div>'+actions(r)+refusalEditor(r)+'</article>').join("") : '<p class="muted" style="padding:12px 0">Aucune demande '+(view.tab==="pending"?"en cours.":"dans l’historique.")+'</p>';
 }
-function stepHeading(step,title){
-  return '<p class="step">Étape '+step+' sur 3</p><div class="step-list" aria-hidden="true">'+[1,2,3].map(n=>'<i class="'+(n<=step?"done":"")+'"></i>').join("")+'</div><h2>'+title+'</h2>';
-}
 function summaryCard(){
   return '<section class="card side-card"><h2>Repères du parcours</h2><div class="summary"><div class="summary-row"><b>Jour habituel</b>'+cap(weekdays[effectiveDay(demoDay)])+'</div><div class="summary-row"><b>Période de formation</b>Du 10 nov. 2026 au 29 oct. 2027</div><div class="summary-row"><b>Mois de soutenance</b>Octobre 2027</div><div class="summary-row"><b>Contrat</b>Du 1 nov. 2026 au 31 oct. 2027</div></div><div class="actions"><button class="btn plain" data-action="show-pending">Voir les demandes en cours</button></div></section>';
 }
 function movementPanel(){
-  const close = '<button class="btn plain" data-action="cancel">Annuler</button>';
-  if(view.mode==="source") return stepHeading(1,"Jour à déplacer")+'<p class="muted">Sélectionnez une journée de formation dans le calendrier.</p><div class="actions">'+close+'</div>';
-  if(view.mode==="target") return stepHeading(2,"Nouvelle date")+'<div class="info-box">Jour initial · <b>'+cap(dateName(view.source))+'</b></div><p class="muted">Les dates possibles sont mises en évidence dans le calendrier.</p><div class="actions"><button class="btn" data-action="change-source">'+(view.pairs.length?"Revenir au récapitulatif":"Changer le jour initial")+'</button>'+close+'</div>';
-  const rule = reviewReason(view.pairs,published());
-  const problem = issueFor(view.pairs);
-  const required = view.pairs.some(p=>p.from<demoDay);
-  return stepHeading(3,view.pairs.length>1?"Vérifier les déplacements":"Vérifier le déplacement")+
-    view.pairs.map((p,i)=>pairMarkup(p.from,p.to)+'<button class="btn plain small" data-action="remove-pair" data-id="'+i+'">Retirer ce déplacement</button>').join("")+
-    '<p class="muted">'+view.pairs.length+' déplacement(s) décompté(s) à l’application.</p>'+
-    (problem?'<div class="info-box warn">'+esc(problem)+'</div>':rule?'<div class="info-box warn">Validation du coordinateur nécessaire. '+esc(rule)+'.</div>':'<div class="info-box success">Le déplacement peut être appliqué immédiatement.</div>')+
+  const delta = view.removed.length-view.added.length;
+  const balanced = view.removed.length>0 && delta===0;
+  const rule = reviewReason(view,published());
+  const problem = balanced ? issueFor(view) : "";
+  const required = view.removed.some(d=>d<demoDay);
+  const guidance = delta>0 ? "Il reste "+delta+" nouvelle(s) date(s) à choisir." :
+    delta<0 ? "Il reste "+(-delta)+" jour(s) de formation à retirer." :
+    balanced ? "Sélection équilibrée. Vous pouvez continuer ou confirmer." : "Sélectionnez les dates directement dans le calendrier.";
+  return '<h2>Déplacer des jours de formation</h2>'+
+    '<div class="info-box" role="status">'+view.removed.length+' à retirer · '+view.added.length+' à ajouter<br>'+guidance+'</div>'+
+    (view.removed.length||view.added.length?dateGroups(view):"")+
+    (problem?'<div class="info-box warn">'+esc(problem)+'</div>':balanced&&rule?'<div class="info-box warn">Validation du coordinateur nécessaire. '+esc(rule)+'.</div>':"")+
     '<label class="field">Motif '+(required?"obligatoire":"(facultatif)")+'<textarea id="move-reason" rows="2">'+esc(view.reason)+'</textarea></label>'+
-    '<div class="actions"><button class="btn primary" data-action="submit-move" '+(problem?"disabled":"")+'>'+(rule?"Envoyer pour validation":view.pairs.length>1?"Confirmer les déplacements":"Confirmer le déplacement")+'</button>'+close+'</div>';
+    '<div class="actions"><button class="btn primary" data-action="submit-move" '+(!balanced||problem?"disabled":"")+'>'+(rule?"Envoyer pour validation":"Confirmer")+'</button><button class="btn plain" data-action="cancel">Annuler</button></div>';
 }
 function rhythmPanel(){
   return '<h2>Changer le jour habituel</h2><p class="muted">Jour actuel · <b>'+weekdays[effectiveDay(demoDay)]+'</b></p>'+
@@ -375,7 +386,7 @@ function rhythmPanel(){
 }
 function requestPanel(r){
   return '<div class="side-title"><h2>Détail de la demande</h2>'+badge(r)+'</div><h3>'+requestTitle(r)+'</h3>'+
-    (r.type==="rhythm"?'<div class="info-box">'+esc(describe(r))+'</div>':r.pairs.map(p=>pairMarkup(p.from,p.to,r.status==="applied"?"Date confirmée":"Date demandée")).join(""))+
+    (r.type==="rhythm"?'<div class="info-box">'+esc(describe(r))+'</div>':dateGroups(datesOf(r),r.status==="applied"?"Dates confirmées":"Dates demandées"))+
     (r.reason?'<p class="summary-row"><b>Motif de la demande</b>'+esc(r.reason)+'</p>':"")+
     (r.decision?'<p class="summary-row"><b>Décision</b>'+esc(r.decision)+'</p>':"")+
     (r.response?'<p class="summary-row"><b>Motif communiqué</b>'+esc(r.response)+'</p>':"")+
@@ -386,9 +397,9 @@ function requestPanel(r){
 function drawSide(){
   const side = $("side");
   const mode = view.mode;
-  side.classList.toggle("is-flow",["source","target","review","rhythm","request"].includes(mode));
+  side.classList.toggle("is-flow",["move","rhythm","request"].includes(mode));
   let content = "";
-  if(["source","target","review"].includes(mode)) content = movementPanel();
+  if(mode==="move") content = movementPanel();
   else if(mode==="rhythm") content = rhythmPanel();
   else if(mode==="request") content = requestPanel(model.requests.find(r=>r.id===view.request));
   else if(selectedDate()){
@@ -422,54 +433,57 @@ function handleDay(date){
     render();
     return;
   }
-  if(view.mode==="target"){
-    const problem = targetError(date,view.source,days,view.pairs);
-    if(problem){feedback(problem); return;}
-    view.pairs.push({from:view.source,to:date});
-    view.source = null;
-    view.mode = "review";
-    view.message = "";
-    render();
-    $("side").querySelector('[data-action="submit-move"]')?.focus({preventScroll:true});
-    return;
+  if(view.mode==="idle"){
+    const problem = sourceError(date,days);
+    if(problem){
+      view.selected = date;
+      drawCalendar();drawSide();
+      feedback(problem);
+      return;
+    }
+    transition("move");
   }
-  const problem = view.pairs.some(p=>p.from===date||p.to===date) ? "Cette date figure déjà dans la demande." : sourceError(date,days);
-  if(problem){
-    view.selected = date;
-    if(view.mode==="idle"){drawCalendar();drawSide();}
-    feedback(problem);
-    return;
+  const isTraining = days.has(date);
+  const selection = isTraining ? view.removed : view.added;
+  const index = selection.indexOf(date);
+  if(index>=0) selection.splice(index,1);
+  else {
+    const problem = isTraining ? sourceError(date,days) : targetError(date,days);
+    if(problem){feedback(problem);return;}
+    if(selection.length>=remaining()){
+      feedback("Vous avez atteint le nombre de déplacements restants.");
+      return;
+    }
+    selection.push(date);
   }
-  view.selected = null;
-  view.source = date;
-  view.mode = "target";
   view.message = "";
   render();
+  $("days").querySelector('[data-id="'+date+'"]')?.focus({preventScroll:true});
 }
 function insertRequest(data){
   const request = {id:"request-"+(++model.lastId),...data};
   model.requests.unshift(request);
   save();
   openRequest(request);
-  feedback(request.status==="pending"?"Demande transmise au coordinateur pédagogique. Suivez le calendrier actuel.":(request.pairs?.length>1?"Déplacements confirmés. Le calendrier a été mis à jour.":"Déplacement confirmé. Le calendrier a été mis à jour."),request.status==="pending"?"":"success");
+  feedback(request.status==="pending"?"Demande transmise au coordinateur pédagogique. Suivez le calendrier actuel.":(datesOf(request).removed.length>1?"Déplacements confirmés. Le calendrier a été mis à jour.":"Déplacement confirmé. Le calendrier a été mis à jour."),request.status==="pending"?"":"success");
 }
 function submitMove(){
-  const problem = issueFor(view.pairs);
-  if(!view.pairs.length || problem){feedback(problem || "Sélectionnez un déplacement."); return;}
-  if(!view.reason.trim() && view.pairs.some(p=>p.from<demoDay)){
+  const problem = issueFor(view);
+  if(problem){feedback(problem);return;}
+  if(!view.reason.trim() && view.removed.some(d=>d<demoDay)){
     feedback("Indiquez le motif de la modification de cette journée passée.");
     $("move-reason").focus();
     return;
   }
-  const review = reviewReason(view.pairs,published());
-  insertRequest({type:"move",pairs:view.pairs,reason:view.reason.trim(),review,status:review?"pending":"applied",decision:review?"":"Acceptation automatique"});
+  const review = reviewReason(view,published());
+  insertRequest({type:"move",removed:[...view.removed],added:[...view.added],reason:view.reason.trim(),review,status:review?"pending":"applied",decision:review?"":"Acceptation automatique"});
 }
 function completeRequest(status,response=""){
   const request = model.requests.find(r=>r.id===view.request);
   if(request?.status!=="pending") return;
   if(status==="refused"&&!response.trim()) return;
   if(status==="applied" && request.type==="move"){
-    const problem = issueFor(request.pairs,request.id);
+    const problem = issueFor(datesOf(request),request.id);
     if(problem){feedback(problem+" Vous pouvez refuser la demande en précisant le motif."); return;}
   }
   request.status = status;
@@ -502,7 +516,7 @@ document.addEventListener("click", event=>{
   }
   if(action==="date"){handleDay(id); return;}
   if(["today","next","prev"].includes(action)){jumpMonth(action); drawCalendar(); return;}
-  if(action==="start"){transition("source"); render();}
+  if(action==="start"){transition("move"); render();}
   else if(action==="rhythm"){transition("rhythm"); render(); $("rhythm-form").querySelector("select").focus();}
   else if(action==="cancel"){transition("idle"); render();}
   else if(action==="tab" || action==="show-pending"){
@@ -515,7 +529,7 @@ document.addEventListener("click", event=>{
     const request = model.requests.find(r=>r.id===id);
     if(!request)return;
     const showPreview = view.role==="cp" && request.status==="pending";
-    if(showPreview)view.month=monthOf(request.effect ?? request.pairs[0].from);
+    if(showPreview)view.month=monthOf(request.effect ?? datesOf(request).removed.slice().sort()[0]);
     openRequest(request);
     const heading = showPreview ? $("month-title") : $("side").querySelector("h2");
     heading.setAttribute("tabindex","-1");
@@ -539,13 +553,6 @@ document.addEventListener("click", event=>{
     $("request-list").querySelector('[data-action="refuse"][data-id="'+view.request+'"]')?.focus();
   }
   else if(action==="submit-move") submitMove();
-  else if(action==="change-source" || action==="remove-pair"){
-    if(action==="remove-pair") view.pairs.splice(Number(id),1);
-    view.mode = view.pairs.length ? "review" : "source";
-    view.source = null;
-    view.message = "";
-    render();
-  }
   else if(action==="reset"){
     model = seed();
     save();
