@@ -377,7 +377,6 @@ function movementPanel(){
   const balanced = view.removed.length>0 && delta===0;
   const rule = reviewReason(view,published());
   const problem = balanced ? issueFor(view) : "";
-  const required = view.removed.some(d=>d<demoDay);
   const guidance = delta>0 ? "Il reste "+delta+" nouvelle(s) date(s) à choisir." :
     delta<0 ? "Il reste "+(-delta)+" jour(s) de formation à retirer." :
     balanced ? "Sélection équilibrée. Vous pouvez continuer ou confirmer." : "Sélectionnez les dates directement dans le calendrier.";
@@ -385,13 +384,13 @@ function movementPanel(){
     '<div class="info-box" role="status">'+view.removed.length+' à retirer · '+view.added.length+' à ajouter<br>'+guidance+'</div>'+
     (view.removed.length||view.added.length?dateGroups(view):"")+
     (problem?'<div class="info-box warn">'+esc(problem)+'</div>':balanced&&rule?'<div class="info-box warn">Validation du coordinateur nécessaire. '+esc(rule)+'.</div>':"")+
-    '<label class="field">Motif '+(required?"obligatoire":"(facultatif)")+'<textarea id="move-reason" rows="2">'+esc(view.reason)+'</textarea></label>'+
+    '<label class="field">Motif (facultatif)<textarea id="move-reason" rows="2">'+esc(view.reason)+'</textarea></label>'+
     '<div class="actions"><button class="btn primary" data-action="submit-move" '+(!balanced||problem?"disabled":"")+'>'+(rule?"Envoyer pour validation":"Confirmer")+'</button><button class="btn plain" data-action="cancel">Annuler</button></div>';
 }
 function rhythmPanel(){
   return '<h2>Changer le jour habituel</h2><p class="muted">Jour actuel · <b>'+weekdays[effectiveDay(demoDay)]+'</b></p>'+
     '<form id="rhythm-form"><label class="field">Nouveau jour<select name="day" required><option value="">Choisir un jour</option>'+weekdays.slice(1,6).map((d,i)=>i+1===effectiveDay(demoDay)?"":'<option value="'+(i+1)+'">'+cap(d)+'</option>').join("")+'</select></label>'+
-    '<label class="field">Date de prise d’effet souhaitée<input type="date" name="effect" min="'+demoDay+'" max="'+addDays(defenseMonth+"-01",-1)+'" required></label><label class="field">Motif de la demande<textarea name="reason" required rows="2"></textarea></label>'+
+    '<label class="field">Date de prise d’effet souhaitée<input type="date" name="effect" min="'+demoDay+'" max="'+addDays(defenseMonth+"-01",-1)+'" required></label><label class="field">Motif de la demande (facultatif)<textarea name="reason" rows="2"></textarea></label>'+
     '<div class="info-box">Votre coordinateur pédagogique valide le changement. Les dates en vigueur s’appliquent jusque-là.</div><div class="actions"><button class="btn primary" type="submit">Envoyer pour validation</button><button class="btn plain" type="button" data-action="cancel">Annuler</button></div></form>';
 }
 function flagsForRequest(request, days){
@@ -497,11 +496,6 @@ function insertRequest(data){
 function submitMove(){
   const problem = issueFor(view);
   if(problem){feedback(problem);return;}
-  if(!view.reason.trim() && view.removed.some(d=>d<demoDay)){
-    feedback("Indiquez le motif de la modification de cette journée passée.");
-    $("move-reason").focus();
-    return;
-  }
   const review = reviewReason(view,published());
   insertRequest({type:"move",removed:[...view.removed],added:[...view.added],reason:view.reason.trim(),review,status:review?"pending":"applied",decision:review?"":"Acceptation automatique"});
 }
@@ -615,7 +609,6 @@ document.addEventListener("submit", event=>{
     if(view.role==="cp")completeRequest("refused",reason);
     return;
   }
-  if(!reason){feedback("Indiquez un motif avant de continuer."); return;}
   if(pending().some(r=>r.type==="rhythm")){feedback("Une demande de changement de jour habituel est déjà en cours.");return;}
   const day = Number(fields.get("day"));
   const effect = String(fields.get("effect"));
