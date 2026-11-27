@@ -555,10 +555,10 @@ document.addEventListener("click", event=>{
   else if(action==="request" || action==="preview-request"){
     const request = model.requests.find(r=>r.id===id);
     if(!request)return;
-    const showPreview = view.role==="cp" && request.status==="pending";
-    if(showPreview)view.month=monthOf(request.effect ?? datesOf(request).removed.slice().sort()[0]);
+    const date = request.effect ?? datesOf(request).removed.slice().sort()[0];
+    if(date)view.month=monthOf(date);
     openRequest(request);
-    const heading = showPreview ? $("month-title") : $("side").querySelector("h2");
+    const heading = $("month-title");
     heading.setAttribute("tabindex","-1");
     heading.focus();
   }
